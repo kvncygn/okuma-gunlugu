@@ -1,0 +1,113 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Yardımcı fonksiyon: Kullanıcı yalnızca kendi UID'sine ait belgelere erişebilir
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Tarih formatı doğrulaması ('yyyy-MM-dd')
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+
+      allow create, update: if isOwner(uid)
+        && (!('displayName' in request.resource.data) ||
+            (request.resource.data.displayName is string &&
+             request.resource.data.displayName.size() >= 1 &&
+             request.resource.data.displayName.size() <= 80))
+        && (!('yearlyGoal' in request.resource.data) ||
+            (request.resource.data.yearlyGoal is int &&
+             request.resource.data.yearlyGoal >= 1 &&
+             request.resource.data.yearlyGoal <= 500))
+        && (!('streakCount' in request.resource.data) ||
+            (request.resource.data.streakCount is int &&
+             request.resource.data.streakCount >= 0))
+        && (!('lastReadDate' in request.resource.data) ||
+            request.resource.data.lastReadDate == null ||
+            isValidDateString(request.resource.data.lastReadDate));
+
+      allow delete: if isOwner(uid);
+
+      // Kitaplar: users/{uid}/books/{bookId}
+      match /books/{bookId} {
+        allow read: if isOwner(uid);
+
+        allow create, update: if isOwner(uid)
+          && request.resource.data.title is string
+          && request.resource.data.title.size() >= 1
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.author is string
+          && request.resource.data.author.size() >= 1
+          && request.resource.data.author.size() <= 150
+          && request.resource.data.totalPages is int
+          && request.resource.data.totalPages >= 1
+          && request.resource.data.totalPages <= 10000
+          && request.resource.data.currentPage is int
+          && request.resource.data.currentPage >= 0
+          && request.resource.data.currentPage <= request.resource.data.totalPages
+          && request.resource.data.status in ['reading', 'finished', 'wishlist'];
+
+        allow delete: if isOwner(uid);
+      }
+
+      // Günlük Okuma Kayıtları: users/{uid}/readingLogs/{logId}
+      match /readingLogs/{logId} {
+        allow read: if isOwner(uid);
+
+        allow create, update: if isOwner(uid)
+          && request.resource.data.bookId is string
+          && request.resource.data.bookId.size() >= 1
+          && isValidDateString(request.resource.data.date)
+          && request.resource.data.pagesRead is int
+          && request.resource.data.pagesRead >= 0
+          && request.resource.data.pagesRead <= 5000
+          && request.resource.data.source in ['manual', 'session'];
+
+        allow delete: if isOwner(uid);
+      }
+
+      // Okuma Seansları: users/{uid}/sessions/{sessionId}
+      match /sessions/{sessionId} {
+        allow read: if isOwner(uid);
+
+        allow create, update: if isOwner(uid)
+          && request.resource.data.bookId is string
+          && request.resource.data.bookId.size() >= 1
+          && request.resource.data.durationSeconds is int
+          && request.resource.data.durationSeconds >= 1
+          && request.resource.data.pagesRead is int
+          && request.resource.data.pagesRead >= 1
+          && request.resource.data.pagesRead <= 5000
+          && request.resource.data.minutesPerPage is number
+          && request.resource.data.minutesPerPage >= 0;
+
+        allow delete: if isOwner(uid);
+      }
+
+      // Alıntılar: users/{uid}/quotes/{quoteId}
+      match /quotes/{quoteId} {
+        allow read: if isOwner(uid);
+
+        allow create, update: if isOwner(uid)
+          && request.resource.data.bookId is string
+          && request.resource.data.bookId.size() >= 1
+          && request.resource.data.page is int
+          && request.resource.data.page >= 0
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 5000
+          && request.resource.data.note is string
+          && request.resource.data.note.size() <= 2000
+          && request.resource.data.source in ['manual', 'ocr'];
+
+        allow delete: if isOwner(uid);
+      }
+    }
+  }
+}
